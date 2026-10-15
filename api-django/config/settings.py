@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-change-me')
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-insecure-secret-key-change-me-in-production-0123456789')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
@@ -134,13 +134,13 @@ MAILERS = {
 }
 
 
-# API REST : authentification par token (voir api/auth.py), tout est protégé par défaut
+# API REST : authentification JWT (voir api/auth.py), tout est protégé par défaut
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ['api.auth.TokenAuthentication'],
+    'DEFAULT_AUTHENTICATION_CLASSES': ['api.auth.JWTAuthentication'],
     'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
     'UNAUTHENTICATED_USER': None,
     'COERCE_DECIMAL_TO_STRING': False,  # price en nombre (15.0), pas en texte
 }
 
-# Durée de validité du token de connexion (secondes)
-TOKEN_MAX_AGE = int(os.environ.get('TOKEN_MAX_AGE', 60 * 60 * 12))
+# Durée de validité du JWT (secondes) : 30 minutes
+JWT_EXPIRES_IN = int(os.environ.get('JWT_EXPIRES_IN', 1800))

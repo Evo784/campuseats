@@ -30,9 +30,17 @@ class OrderSerializer(serializers.ModelSerializer):
     id_menu = serializers.PrimaryKeyRelatedField(source='menu', queryset=Menu.objects.all())
     payment_method = serializers.ChoiceField(choices=Order.PAYMENT_METHODS)
     quantity = serializers.IntegerField(min_value=1)
+    dishes = serializers.SerializerMethodField()
+    total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
-        fields = ['id_order', 'id_user', 'id_menu', 'order_date', 'payment_method',
-                  'is_delivered', 'quantity']
+        fields = ['id_order', 'id_user', 'id_menu', 'dishes', 'order_date', 'quantity',
+                  'payment_method', 'is_delivered', 'total_price']
         read_only_fields = ['id_order', 'order_date', 'is_delivered']
+
+    def get_dishes(self, order):
+        return MenuSerializer().get_dishes(order.menu)
+
+    def get_total_price(self, order):
+        return order.menu.price * order.quantity

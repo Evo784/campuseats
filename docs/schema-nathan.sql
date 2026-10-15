@@ -1,5 +1,5 @@
--- Schéma CampusEats (par Nathan). PostgreSQL.
--- Exécuté automatiquement au premier démarrage du conteneur (base campuseats).
+-- Schéma SQL initial de Nathan, conservé comme RÉFÉRENCE uniquement.
+-- Les tables sont maintenant créées par les migrations Django (api-django/api/migrations).
 
 CREATE TABLE roles (
     id_role BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

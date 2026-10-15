@@ -1,6 +1,5 @@
 from datetime import date
 
-import pandas as pd
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -9,9 +8,30 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .auth import make_token, verify_password
-from .models import Menu, Order, User
+from . import analytics
+from .auth import hash_password, make_token, verify_password
+from .models import Menu, Order, Role, User
 from .serializers import MenuSerializer, OrderSerializer
+
+
+class UserCreateView(APIView):
+    """POST /v1/users : inscription publique, crée toujours un compte USER (Argon2id)."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = str(request.data.get('email', '')).strip().lower()
+        password = str(request.data.get('password', ''))
+        if '@' not in email or len(email) > 255:
+            raise ValidationError({'email': 'Email invalide.'})
+        if len(password) < 8:
+            raise ValidationError({'password': '8 caractères minimum.'})
+        if User.objects.filter(email=email).exists():
+            return Response({'detail': 'Cet email est déjà utilisé.'}, status=status.HTTP_409_CONFLICT)
+        user = User.objects.create(email=email, password_hash=hash_password(password),
+                                   role=Role.objects.get(label='USER'))
+        return Response({'id_user': user.id_user, 'email': user.email, 'role': 'USER'},
+                        status=status.HTTP_201_CREATED)
 
 
 class LoginView(APIView):
@@ -26,7 +46,8 @@ class LoginView(APIView):
         if user is None or not verify_password(user.password_hash, password):
             return Response({'detail': 'Email ou mot de passe incorrect.'},
                             status=status.HTTP_401_UNAUTHORIZED)
-        return Response({'token': make_token(user), 'id_user': user.id_user, 'role': user.role.label})
+        token, expires_in = make_token(user)
+        return Response({'token': token, 'expires_in': expires_in})
 
 
 class MenuByIdView(APIView):
@@ -81,36 +102,46 @@ class OrderDetailView(APIView):
         return Response(OrderSerializer(order).data)
 
 
-class MenuStatsView(APIView):
-    """GET /v1/menus/stats?debut=YYYY-MM-DD&fin=YYYY-MM-DD : ventes par jour (admin seulement)."""
+def _period(request):
+    """Lit startDate et endDate (YYYY-MM-DD) dans la query string."""
+    try:
+        start = date.fromisoformat(request.query_params['startDate'])
+        end = date.fromisoformat(request.query_params['endDate'])
+    except (KeyError, ValueError):
+        raise ValidationError('Paramètres startDate et endDate requis, format YYYY-MM-DD.')
+    if start > end:
+        raise ValidationError('startDate doit être avant endDate.')
+    return start, end
+
+
+def _require_admin(request):
+    if not request.user.is_admin:
+        raise PermissionDenied('Réservé à la cafétéria.')
+
+
+class DishStatsView(APIView):
+    """GET /v1/dishes/stats?startDate=&endDate= (tout utilisateur connecté)."""
 
     def get(self, request):
-        if not request.user.is_admin:
-            raise PermissionDenied('Réservé à la cafétéria.')
-        try:
-            debut = date.fromisoformat(request.query_params['debut'])
-            fin = date.fromisoformat(request.query_params['fin'])
-        except (KeyError, ValueError):
-            raise ValidationError('Paramètres debut et fin requis, format YYYY-MM-DD.')
-        if debut > fin:
-            raise ValidationError('debut doit être avant fin.')
+        start, end = _period(request)
+        return Response(analytics.dish_stats(start, end))
 
-        rows = list(Order.objects.filter(menu__menu_date__range=(debut, fin))
-                    .values('menu__menu_date', 'menu__price', 'quantity'))
-        if not rows:
-            return Response({'debut': debut, 'fin': fin, 'total_quantity': 0,
-                             'total_revenue': 0.0, 'days': []})
 
-        df = pd.DataFrame(rows)
-        df['revenue'] = df['menu__price'].astype(float) * df['quantity']
-        per_day = (df.groupby('menu__menu_date')
-                     .agg(quantity=('quantity', 'sum'), revenue=('revenue', 'sum'),
-                          orders=('quantity', 'count'))
-                     .reset_index().sort_values('menu__menu_date'))
-        days = [{'menu_date': r.menu__menu_date, 'quantity': int(r.quantity),
-                 'revenue': round(float(r.revenue), 2), 'orders': int(r.orders)}
-                for r in per_day.itertuples()]
-        return Response({'debut': debut, 'fin': fin,
-                         'total_quantity': int(per_day['quantity'].sum()),
-                         'total_revenue': round(float(per_day['revenue'].sum()), 2),
-                         'days': days})
+class OrderStatsView(APIView):
+    """GET /v1/orders/stats?startDate=&endDate= (admin)."""
+
+    def get(self, request):
+        _require_admin(request)
+        start, end = _period(request)
+        return Response(analytics.order_stats(start, end))
+
+
+class OrderForecastView(APIView):
+    """GET /v1/orders/forecast?startDate=&endDate= : prévision sur des dates futures (admin)."""
+
+    def get(self, request):
+        _require_admin(request)
+        start, end = _period(request)
+        if (end - start).days > 92:
+            raise ValidationError('Période limitée à 93 jours.')
+        return Response(analytics.order_forecast(start, end, date.today()))
