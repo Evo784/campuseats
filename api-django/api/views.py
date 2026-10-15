@@ -1,7 +1,6 @@
 from datetime import date
 
 import pandas as pd
-from django.contrib.auth.hashers import check_password
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -10,7 +9,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .auth import make_token
+from .auth import make_token, verify_password
 from .models import Menu, Order, User
 from .serializers import MenuSerializer, OrderSerializer
 
@@ -24,7 +23,7 @@ class LoginView(APIView):
         password = str(request.data.get('password', ''))
         user = User.objects.filter(email=email).select_related('role').first()
         # Même message dans les deux cas : on ne révèle pas si l'email existe
-        if user is None or not check_password(password, user.password_hash):
+        if user is None or not verify_password(user.password_hash, password):
             return Response({'detail': 'Email ou mot de passe incorrect.'},
                             status=status.HTTP_401_UNAUTHORIZED)
         return Response({'token': make_token(user), 'id_user': user.id_user, 'role': user.role.label})
