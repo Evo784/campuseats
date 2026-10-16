@@ -47,7 +47,9 @@ def order_stats(start, end):
     df = pd.DataFrame(rows)
     df['revenue'] = df['menu__price'].astype(float) * df['quantity']
     delivered = int(df['is_delivered'].sum())
-    methods = df.groupby('payment_method').size().sort_values(ascending=False)
+    # Tri stable : plus utilisé d'abord, puis ordre alphabétique
+    methods = (df.groupby('payment_method').size().reset_index(name='count')
+                 .sort_values(['count', 'payment_method'], ascending=[False, True]))
     result.update({
         'total_orders': len(df),
         'total_quantity': int(df['quantity'].sum()),
@@ -55,7 +57,7 @@ def order_stats(start, end):
         'average_order_value': _money(df['revenue'].mean()),
         'delivered_orders': delivered,
         'pending_orders': len(df) - delivered,
-        'payment_methods': [{'method': m, 'count': int(c)} for m, c in methods.items()],
+        'payment_methods': [{'method': r.payment_method, 'count': int(r.count)} for r in methods.itertuples()],
     })
     return result
 
